@@ -1,0 +1,37 @@
+flowchart TD
+    human([Human user]) -->|Free-text music request| ui[Streamlit app<br/>app.py]
+    catalog[(data/songs.csv<br/>18-song catalog)] --> loader[Catalog loader]
+    ui --> agent[Hybrid recommendation agent<br/>src/hybrid.py]
+    loader --> agent
+
+    agent --> extract{Extract preferences}
+    extract -->|API key available| llm[OpenAI-compatible LLM]
+    extract -->|Missing key or invalid response| fallback[Deterministic fallback parser]
+    llm --> prefs[Structured preferences<br/>genre, mood, energy, acousticness]
+    fallback --> prefs
+
+    prefs --> scorer[Deterministic weighted scorer<br/>src/recommender.py]
+    catalog --> scorer
+    scorer --> rank[Score all songs<br/>select top K]
+
+    rank --> explain{Generate grounded explanations}
+    explain -->|Retrieved metadata only| explainer[LLM explanation generator]
+    explain -->|LLM unavailable| templates[Grounded template explanations]
+    explainer --> output[Ranked songs<br/>scores + explanations]
+    templates --> output
+    rank --> output
+    output --> ui
+
+    subgraph validation [Testing and human validation]
+        tests[pytest tests/test_recommender.py]
+        mocks[Mocked LLM responses]
+        smoke[Manual smoke test]
+        review([Human reviews relevance<br/>and explanation grounding])
+    end
+
+    tests --> scorer
+    tests --> fallback
+    mocks --> explainer
+    smoke --> ui
+    output --> review
+    review -. feedback .-> ui
