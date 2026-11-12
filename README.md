@@ -1,234 +1,237 @@
-# 🎵 Music Recommender Simulation
+# Signal & Sound: Hybrid AI Music Recommender
 
-## Project Summary
+## Original project
 
-This project is a small, explainable music recommender. It compares user
-preferences with 18 songs in a CSV catalog. It scores each song and prints the
-top five recommendations with short explanations.
+The original Modules 1–3 project was **Music Recommender Simulation**. Its goal
+was to demonstrate an explainable content-based recommender using a small
+catalog of 18 songs and weighted metadata such as genre, mood, energy, tempo,
+valence, danceability, and acousticness. The original system accepted a
+structured user profile, scored every song, sorted the results, and returned
+the top recommendations with matching reasons.
 
----
+## Title and summary
 
-## How The System Works
+Signal & Sound turns a free-text request such as “Something heavy, dark, and
+energetic” into ranked music recommendations. It combines an LLM for natural
+language preference extraction and grounded explanations with the original
+deterministic scoring engine for ranking.
 
-Real-world recommendation systems learn from many signals, including what users listen to, skip, save, or add to playlists, as well as the attributes of each song. They often combine collaborative filtering, which finds patterns across users, with content-based filtering, which compares song features. Our simulation will focus on a simple, explainable content-based approach: it will prioritize matching a user's favorite genre and mood, then use numerical audio features such as energy, tempo, valence, danceability, and acousticness to rank songs by how closely they fit the user's preferences.
+This matters because the LLM makes the system easier to use without allowing
+it to invent songs or silently change the ranking logic. Every recommendation
+comes from the local catalog, has a deterministic score, and can be traced
+back to song metadata and user preferences.
 
-The `Song` object will use these features:
+## Architecture overview
 
-- `id`
-- `title`
-- `artist`
-- `genre`
-- `mood`
-- `energy`
-- `tempo_bpm`
-- `valence`
-- `danceability`
-- `acousticness`
+The full flow is shown in [`system_diagram.mmd`](system_diagram.mmd).
 
-The updated `UserProfile` will store the user's main categorical preferences and numeric targets:
+1. A user enters a natural-language request in the Streamlit interface.
+2. The hybrid recommendation agent sends the request to the OpenAI-compatible
+   LLM adapter, which returns structured preferences constrained by the
+   catalog's genres and moods.
+3. If the API key is missing, the request fails, or the response is invalid, a
+   deterministic fallback parser extracts a limited local profile.
+4. The existing weighted scorer evaluates all 18 songs and selects the top K.
+5. The LLM receives only the selected song metadata when generating
+   explanations. If it is unavailable, grounded template explanations are
+   used instead.
+6. The user sees ranked songs, scores, metadata, and explanations. Automated
+   tests and human review check the recommendation behavior and explanation
+   grounding.
 
-- `favorite_genre`
-- `favorite_mood`
-- `target_energy`
-- `target_valence`
-- `target_tempo_bpm`
-- `target_danceability`
-- `likes_acoustic`
+Important boundary: the LLM explains the deterministic results. It does not
+add tracks, invent metadata, modify scores, or rerank the catalog.
 
-This remains a deliberately small, explainable profile. Energy is currently
-the strongest numeric preference. Genre and mood still add important exact
-match bonuses.
+### Retrieval-augmented generation clarification
 
-### Algorithm Recipe
+This project uses a lightweight, legitimate RAG pattern, but its retriever is
+deterministic metadata retrieval rather than vector similarity search. The
+system loads the complete `data/songs.csv` catalog, compares each song's
+genre, mood, energy, acousticness, and other audio features against the
+structured preferences, and retrieves the highest-scoring top-K songs.
 
-For every song in `data/songs.csv`:
+Those retrieved song records and their deterministic scores are then supplied
+as context to the explanation generator. The project does not create text
+embeddings, use a vector database, perform nearest-neighbor search, or retrieve
+tracks from an external corpus. This trade-off keeps the system transparent
+and reproducible for the small catalog while giving up the semantic recall and
+scalability that vector retrieval could provide for a much larger library.
 
-1. Award 30 points for an exact mood match.
-2. Award 12.5 points for an exact genre match.
-3. Add up to 40 points for how closely the song's energy matches `target_energy`.
-4. Add up to 10 points for valence similarity.
-5. Add up to 7 points for matching the user's acoustic preference.
-6. Add up to 5 points for tempo similarity.
-7. Add up to 3 points for danceability similarity.
-8. Save the song, total score, and a short explanation of the matching features.
+## Setup instructions
 
-The numerical feature scores will be normalized so that closer values receive more points. After every song has been scored, the system will sort the results from highest to lowest and return the top `k` recommendations.
+The project requires Python 3.13 or newer.
 
-## Hybrid AI Demo
+### Install with uv
 
-The repository also includes a Streamlit interface for the hybrid workflow:
+```bash
+uv sync
+```
+
+If you prefer pip:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### Configure the LLM
+
+Create a local environment file from the example:
+
+```bash
+cp .env.example .env
+```
+
+Set your key in `.env`:
+
+```env
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1/chat/completions
+```
+
+`.env` is ignored by Git. `.env.example` is safe to commit and contains no
+secret value.
+
+### Run the Streamlit application
 
 ```bash
 streamlit run app.py
 ```
 
-Enter a free-text request such as `Something heavy, dark, and energetic`. The
-LLM adapter extracts catalog-compatible preferences, the deterministic engine
-scores all 18 songs, and explanations are generated only from the retrieved
-song metadata. Set `OPENAI_API_KEY` to enable the live adapter; without it, the
-app uses local preference extraction and grounded template explanations.
+Open the local URL shown by Streamlit, enter a preference description, and
+select **Recommend**.
 
-Optional configuration variables are `OPENAI_MODEL` and
-`OPENAI_BASE_URL`.
-
-Potential bias: the energy weight can push energetic songs above better mood or
-genre matches. The small catalog and fixed labels can also hide useful songs
-from underrepresented genres. The boolean `likes_acoustic` preference is a
-simple approximation of a more gradual taste.
-
----
-
-## Getting Started
-
-### Setup
-
-1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if it
-   is not already installed.
-
-   ```bash
-   uv sync
-   ```
-
-2. Run the recommender:
+### Run the command-line simulation
 
 ```bash
 uv run python src/main.py
 ```
 
-### Running Tests
-
-Run the starter tests with:
+### Run tests
 
 ```bash
 uv run pytest
 ```
 
-You can add more tests in `tests/test_recommender.py`.
+## Sample interactions
 
----
+The examples below show the deterministic fallback mode, which works without
+an API key. With a configured LLM, the extracted preferences and explanations
+may be more nuanced, but the ranking still comes from the deterministic
+engine.
 
-## Sample Recommendation Output
+### 1. Heavy, dark, and energetic
 
-```text
-Loaded songs: 18
-
-High-Energy Pop - Top recommendations:
-
-Sunrise City - Score: 104.64
-Rooftop Lights - Score: 89.66
-Gym Hero - Score: 69.41
-Velvet Calle - Score: 59.03
-Neon Gravity - Score: 57.31
-```
-
-The full profile output is recorded in the Experiments section below. The
-adversarial logs there were captured before the later energy-weight change.
-
----
-
-## Experiments You Tried
-
-The recommender was tested with adversarial profiles designed to expose
-unexpected scoring behavior. The scores in these logs document that earlier
-experiment; I also tried doubling the energy and halving the genreweight, but it did not result in any significant differenes. Run `uv run python src/main.py` for current scores.
-
-### Conflicting High-Energy Sad
+Input:
 
 ```text
-Gym Hero - Score: 63.39
-Because: genre match (+25.0); mood mismatch (+0.0); energy similarity (+19.4); valence similarity (+8.7); tempo similarity (+1.0); danceability similarity (+2.6); acousticness preference (+6.6)
-Sunrise City - Score: 60.91
-Because: genre match (+25.0); mood mismatch (+0.0); energy similarity (+18.4); valence similarity (+9.4); tempo similarity (+0.0); danceability similarity (+2.4); acousticness preference (+5.7)
-Neon Gravity - Score: 38.77
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+19.0); valence similarity (+9.9); tempo similarity (+0.7); danceability similarity (+2.8); acousticness preference (+6.4)
-Storm Runner - Score: 36.55
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+19.8); valence similarity (+5.8); tempo similarity (+2.7); danceability similarity (+2.0); acousticness preference (+6.3)
-Iron Horizon - Score: 35.17
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+18.6); valence similarity (+4.2); tempo similarity (+4.0); danceability similarity (+1.7); acousticness preference (+6.7)
+Something heavy, dark, and energetic
 ```
 
-### Extreme Values
+Extracted fallback preferences:
 
 ```text
-Glass Cathedral - Score: 32.61
-Because: genre match (+25.0); mood mismatch (+0.0); energy similarity (+0.0); valence similarity (+0.0); tempo similarity (+0.0); danceability similarity (+1.0); acousticness preference (+6.6)
-Spacewalk Thoughts - Score: 6.71
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+0.0); valence similarity (+0.0); tempo similarity (+0.0); danceability similarity (+0.3); acousticness preference (+6.4)
-Coffee Shop Stories - Score: 6.23
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+0.0); valence similarity (+0.0); tempo similarity (+0.0); danceability similarity (+0.0); acousticness preference (+6.2)
-Library Rain - Score: 6.02
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+0.0); valence similarity (+0.0); tempo similarity (+0.0); danceability similarity (+0.0); acousticness preference (+6.0)
-Focus Flow - Score: 5.46
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+0.0); valence similarity (+0.0); tempo similarity (+0.0); danceability similarity (+0.0); acousticness preference (+5.5)
+genre=metal, mood=aggressive, energy=0.90, acousticness=0.15
 ```
 
-### No Matching Categories
+Top output:
 
 ```text
-After the Rain - Score: 19.20
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+19.2)
-Backroad Letters - Score: 18.40
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+18.4)
-Midnight Coding - Score: 18.40
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+18.4)
-Focus Flow - Score: 18.00
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+18.0)
-Wildflower Road - Score: 17.80
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+17.8)
+1. Iron Horizon — 85.93
+   Iron Horizon by Black Meridian fits through the metal genre, an aggressive
+   mood, energy at 0.97, acousticness at 0.04.
+2. Storm Runner — 46.25
+3. Gym Hero — 45.10
 ```
 
-### Minimal Profile
+### 2. Lofi and chill for studying
+
+Input:
 
 ```text
-Sunrise City - Score: 25.00
-Because: genre match (+25.0)
-Gym Hero - Score: 25.00
-Because: genre match (+25.0)
-Midnight Coding - Score: 0.00
-Because: genre mismatch (+0.0)
-Storm Runner - Score: 0.00
-Because: genre mismatch (+0.0)
-Library Rain - Score: 0.00
-Because: genre mismatch (+0.0)
+lofi chill calm music for studying
 ```
 
-### Contradictory Acoustic
+Extracted fallback preferences:
 
 ```text
-Storm Runner - Score: 75.50
-Because: genre match (+25.0); mood match (+30.0); energy similarity (+19.8); acousticness preference (+0.7)
-Gym Hero - Score: 49.75
-Because: genre mismatch (+0.0); mood match (+30.0); energy similarity (+19.4); acousticness preference (+0.4)
-Sunrise City - Score: 19.66
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+18.4); acousticness preference (+1.3)
-Rooftop Lights - Score: 19.65
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+17.2); acousticness preference (+2.4)
-Neon Gravity - Score: 19.56
-Because: genre mismatch (+0.0); mood mismatch (+0.0); energy similarity (+19.0); acousticness preference (+0.6)
+genre=lofi, energy=0.35
 ```
 
-These results show that the scorer treats each preference independently. It
-does not detect contradictions, validate feature ranges, or prevent a sparse
-profile from producing ties.
+Top output:
 
----
+```text
+1. Library Rain — 52.50
+2. Focus Flow — 50.50
+3. Midnight Coding — 49.70
+```
 
-## Limitations and Risks
+The live LLM can additionally infer a low acousticness target when the user
+explicitly asks for acoustic or unplugged music.
 
-The recommender only works with this small catalog. It does not understand
-lyrics, language, or listening history. Exact labels can miss related songs.
-Invalid profile values can make similarity scores drop to zero. High-energy
-songs can also appear for users who wanted a specific mood instead.
+### 3. Happy pop for a workout
 
----
+Input:
 
-## Reflection
+```text
+pop happy energetic music for a workout
+```
 
-My biggest learning moment was how weights turn preferences into scores. Small weight
-changes can change the results without changing the songs. The experiments
-also showed that a simple recommender can repeat the same songs for different
-users and create a narrow filter bubble. AI tools helped me explore more complex ranking methods than the
-Initial implementation, but I had to be careful to avoid overfitting to the small catalog. I also learned that a simple, explainable system can still be useful for understanding how recommendations are made. If I extened this project the first thing I would do is make reccomandations based off listening history; There is a concept of "revealed preference" where a user may not know what they like until they hear it. I would also add more songs to the catalog and include more features, such as lyrics, language, and user ratings.
+Extracted fallback preferences:
 
-See the completed [model card](model_card.md) for the profile comparisons and
-future improvement ideas.
+```text
+genre=pop, energy=0.90
+```
+
+Top output:
+
+```text
+1. Gym Hero — 51.30
+2. Sunrise City — 49.30
+3. Storm Runner — 39.60
+```
+
+Each result is still drawn from `data/songs.csv`; no new track is generated by
+the model.
+
+## Design decisions
+
+- **Deterministic ranking, LLM assistance:** The original weighted scorer is
+  predictable and testable, while the LLM handles the parts users naturally
+  express in prose.
+- **Grounded explanations:** The explanation prompt receives retrieved song
+  records only. This reduces hallucinated artists, tracks, and attributes.
+- **Catalog-constrained extraction:** Genre and mood values are checked against
+  labels present in the catalog. Unknown labels are discarded instead of
+  creating unscorable categories.
+- **Standard-library API client:** The project uses `urllib` for the API call
+  instead of adding an OpenAI SDK. This keeps the integration small, but means
+  the adapter has fewer conveniences and less typed error handling.
+- **Offline fallback:** Missing credentials or API failures do not make the
+  demo unusable. The fallback is intentionally simple and less expressive than
+  the LLM.
+- **Small catalog trade-off:** The 18-song dataset makes the scoring behavior
+  easy to inspect, but it limits variety and can produce repetitive results.
+
+## Testing summary
+
+Implemented tests cover:
+
+- deterministic sorting by weighted score
+- non-empty recommendation explanations
+- numeric acousticness scoring
+- fallback preference extraction
+- heavy/dark/energetic ranking behavior
+- hybrid recommendations without an API key
+- mocked LLM extraction and explanation responses
+
+The direct smoke test and Python compilation checks pass. The full pytest suite
+could not be executed in the development environment because pytest and the
+project dependencies were not installed, and network access prevented `uv`
+from downloading the locked packages. This also prevented browser-level
+Streamlit verification in that environment.
+
+The main lesson was that the LLM should improve the interface and explanation
+quality without becoming the source of truth for ranking. Keeping the scorer
+deterministic makes failures easier to diagnose and lets the application remain
+functional when the model or network is unavailable.
