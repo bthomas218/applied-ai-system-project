@@ -54,6 +54,23 @@ For every song in `data/songs.csv`:
 
 The numerical feature scores will be normalized so that closer values receive more points. After every song has been scored, the system will sort the results from highest to lowest and return the top `k` recommendations.
 
+## Hybrid AI Demo
+
+The repository also includes a Streamlit interface for the hybrid workflow:
+
+```bash
+streamlit run app.py
+```
+
+Enter a free-text request such as `Something heavy, dark, and energetic`. The
+LLM adapter extracts catalog-compatible preferences, the deterministic engine
+scores all 18 songs, and explanations are generated only from the retrieved
+song metadata. Set `OPENAI_API_KEY` to enable the live adapter; without it, the
+app uses local preference extraction and grounded template explanations.
+
+Optional configuration variables are `OPENAI_MODEL` and
+`OPENAI_BASE_URL`.
+
 Potential bias: the energy weight can push energetic songs above better mood or
 genre matches. The small catalog and fixed labels can also hide useful songs
 from underrepresented genres. The boolean `likes_acoustic` preference is a

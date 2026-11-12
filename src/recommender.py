@@ -1,5 +1,5 @@
 import csv
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
 @dataclass
@@ -39,12 +39,55 @@ class Recommender:
         self.songs = songs
 
     def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
-        # TODO: Implement recommendation logic
-        return self.songs[:k]
+        if k <= 0:
+            return []
+
+        preferences = {
+            "genre": user.favorite_genre,
+            "mood": user.favorite_mood,
+            "energy": user.target_energy,
+            "likes_acoustic": user.likes_acoustic,
+        }
+        ranked = sorted(
+            self.songs,
+            key=lambda song: score_song(preferences, song_to_dict(song))[0],
+            reverse=True,
+        )
+        return ranked[:k]
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
-        # TODO: Implement explanation logic
-        return "Explanation placeholder"
+        preferences = {
+            "genre": user.favorite_genre,
+            "mood": user.favorite_mood,
+            "energy": user.target_energy,
+            "likes_acoustic": user.likes_acoustic,
+        }
+        _, reasons = score_song(preferences, song_to_dict(song))
+        matches = [reason for reason in reasons if "mismatch" not in reason]
+        if not matches:
+            return f"{song.title} is the closest available match to your preferences."
+        return f"{song.title} fits because it has " + ", ".join(
+            reason.replace(" match (+12.5)", " a matching genre")
+            .replace(" match (+30.0)", " a matching mood")
+            .replace(" similarity", "")
+            for reason in matches
+        ) + "."
+
+
+def song_to_dict(song: Song) -> Dict[str, object]:
+    """Convert a typed song into the mapping shape used by the scorer."""
+    return {
+        "id": song.id,
+        "title": song.title,
+        "artist": song.artist,
+        "genre": song.genre,
+        "mood": song.mood,
+        "energy": song.energy,
+        "tempo_bpm": song.tempo_bpm,
+        "valence": song.valence,
+        "danceability": song.danceability,
+        "acousticness": song.acousticness,
+    }
 
 def load_songs(csv_path: str) -> List[Dict]:
     """Load song records from a CSV file."""
@@ -107,6 +150,12 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
         points = acoustic_match * 7.0
         score += points
         reasons.append(f"acousticness preference (+{points:.1f})")
+    elif user_prefs.get("acousticness") is not None:
+        points = similarity(
+            float(song["acousticness"]), float(user_prefs["acousticness"])
+        ) * 7.0
+        score += points
+        reasons.append(f"acousticness similarity (+{points:.1f})")
 
     return score, reasons
 

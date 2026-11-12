@@ -1,4 +1,10 @@
-from src.recommender import Song, UserProfile, Recommender
+from src.recommender import Song, UserProfile, Recommender, score_song
+from src.hybrid import (
+    ExtractedPreferences,
+    OpenAICompatibleClient,
+    fallback_preferences,
+    hybrid_recommend,
+)
 
 def make_small_recommender() -> Recommender:
     songs = [
@@ -59,3 +65,53 @@ def test_explain_recommendation_returns_non_empty_string():
     explanation = rec.explain_recommendation(user, song)
     assert isinstance(explanation, str)
     assert explanation.strip() != ""
+
+
+def test_numeric_acousticness_preference_is_supported():
+    score, reasons = score_song({"acousticness": 0.2}, {"acousticness": 0.2})
+    assert score == 7.0
+    assert reasons == ["acousticness similarity (+7.0)"]
+
+
+def test_fallback_preferences_map_heavy_dark_energy_to_catalog():
+    songs = make_small_recommender().songs
+    prefs = fallback_preferences("Something heavy, dark, and energetic", songs)
+    assert prefs.energy == 0.9
+    assert prefs.acousticness == 0.15
+
+
+def test_hybrid_fallback_prefers_heavy_catalog_match():
+    songs = [
+        Song(1, "Iron Horizon", "Black Meridian", "metal", "aggressive", 0.97, 168, 0.32, 0.55, 0.04),
+        Song(2, "Night Drive Loop", "Neon Echo", "synthwave", "moody", 0.75, 110, 0.49, 0.73, 0.22),
+    ]
+    response = hybrid_recommend("Something heavy, dark, and energetic", songs, k=1, client=OpenAICompatibleClient(api_key=""))
+    assert response.recommendations[0].song["title"] == "Iron Horizon"
+
+
+def test_hybrid_recommend_works_without_api_key():
+    songs = make_small_recommender().songs
+    response = hybrid_recommend("Something energetic", songs, k=1, client=OpenAICompatibleClient(api_key=""))
+    assert response.used_fallback is True
+    assert len(response.recommendations) == 1
+    assert response.recommendations[0].explanation
+
+
+def test_hybrid_recommend_uses_mocked_llm_for_extraction_and_explanation():
+    songs = make_small_recommender().songs
+
+    class MockClient:
+        def __init__(self):
+            self.calls = 0
+
+        def complete_json(self, system, user):
+            self.calls += 1
+            if self.calls == 1:
+                return {"genre": "pop", "mood": "happy", "energy": 0.8, "acousticness": 0.2}
+            return {"explanations": ["Grounded explanation"]}
+
+    client = MockClient()
+    response = hybrid_recommend("pop and happy", songs, k=1, client=client)
+    assert response.used_fallback is False
+    assert response.preferences.genre == "pop"
+    assert response.recommendations[0].explanation == "Grounded explanation"
