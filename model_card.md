@@ -1,33 +1,42 @@
-# 🎧 Model Card: Music Recommender Simulation
+# 🎧 Model Card: Signal & Sound Hybrid Music Recommender
 
 ## 1. Model Name
 
-**VibeMatch 1.0**
+**Signal & Sound 1.0**
 
 ---
 
 ## 2. Goal / Task
 
-VibeMatch suggests songs for a user. It compares user preferences with song
-features. It returns the five highest-scoring songs.
+Signal & Sound converts a natural-language music request into structured
+preferences and returns the five highest-scoring songs. An LLM extracts
+preferences and drafts explanations; a deterministic local scorer ranks songs
+from the catalog.
 
 ### Intended Use
 
-This system is for classroom learning. It shows how simple recommendation rules
-work. It can suggest songs for a small music collection.
+This system is for classroom learning. It shows how a hybrid AI system can use
+an LLM for a natural-language interface while keeping ranking transparent. It
+can suggest songs from a small local music collection.
 
 ### Non-Intended Use
 
 This system is not a production music service. It should not make important
-decisions about people. It should not be treated as a complete measure of a
-person's taste.
+decisions about people or be treated as a complete measure of a person's taste.
+The LLM does not add tracks, invent metadata, modify scores, or rerank the
+catalog.
 
 ---
 
 ## 3. Algorithm Summary
 
-The recommender compares each song with the user's preferences. A mood match is
-worth 30 points. A genre match is worth 12.5 points. Energy can add up to 40
+The LLM-compatible adapter extracts genre, mood, energy, acousticness, valence,
+tempo, and danceability from free text. Catalog-constrained validation removes
+unknown genre and mood labels and clamps bounded numeric values. If the LLM is
+unavailable or returns invalid data, a deterministic fallback parser is used.
+
+The recommender then compares each song with the structured preferences. A mood
+match is worth 30 points. A genre match is worth 12.5 points. Energy can add up to 40
 points. Valence can add up to 10 points. Tempo can add up to 5 points.
 Danceability can add up to 3 points. Acoustic preference can add up to 7 points.
 
@@ -54,16 +63,41 @@ clear changes when the user changes from low energy to high energy.
 
 ---
 
-## 6. Limitations and Bias
+## 6. Limitations and Biases
 
 Energy can dominate the results because it is worth up to 40 points. A song can
 have the right energy but the wrong mood. Genre and mood use exact text
 matches. For example, `pop` and `indie pop` are different labels. The small
 catalog can also favor the genres and moods that have more songs.
 
+The catalog contains only 18 songs, so it is not representative of the full
+range of music, artists, cultures, languages, or listening contexts. Most
+genres appear only once, while lofi and pop have multiple entries; this creates
+exposure bias toward labels with more catalog items. The hand-authored feature
+values and score weights also encode the designer's assumptions about what
+similarity means. The LLM may misunderstand ambiguous requests, and the
+fallback parser recognizes only a small set of words. Reliability and
+confidence scores are deterministic indicators, not calibrated probabilities.
+
+## 7. Misuse and Prevention
+
+The system could be misused to present subjective recommendations as objective
+judgments about a person's identity, mood, mental health, or worth. It could
+also be used to steer users toward a narrow set of genres or to repeat
+hallucinated explanations if the LLM output is trusted without checking.
+
+To reduce these risks, the project limits the system to music discovery, keeps
+ranking deterministic and inspectable, constrains extracted categories to the
+local catalog, and supplies the explanation model only with retrieved song
+metadata. Invalid or unavailable LLM responses trigger the offline parser or
+grounded template explanations. The interface exposes scores, metadata,
+warnings, and reliability indicators so a user can review the basis for each
+recommendation. Production use would still require broader catalog coverage,
+privacy review, abuse monitoring, and human oversight.
+
 ---
 
-## 7. Evaluation
+## 8. Evaluation
 
 I tested six profiles: High-Energy Pop, Conflicting High-Energy Sad, Extreme
 Values, No Matching Categories, Minimal Profile, and Contradictory Acoustic.
@@ -95,12 +129,12 @@ the mathematical comparison because several of its numbers are strong.
   The second profile has unknown genre and mood values, so only its medium
   energy target matters and lower-energy songs rise to the top.
 - **High-Energy Pop vs. Minimal Profile:** High-Energy Pop selects `Sunrise
-  City` using several matching features. The Minimal Profile only asks for pop,
+City` using several matching features. The Minimal Profile only asks for pop,
   so `Sunrise City` and `Gym Hero` tie on the genre points; the catalog order
   decides which one appears first.
 - **High-Energy Pop vs. Contradictory Acoustic:** The first profile prefers
   happy pop, while the second prefers intense rock with acoustic music. `Storm
-  Runner` wins for the second profile because it matches rock and intense,
+Runner` wins for the second profile because it matches rock and intense,
   while `Gym Hero` remains nearby because it also has intense mood and high
   energy.
 - **Conflicting High-Energy Sad vs. Extreme Values:** The sad profile still
@@ -124,12 +158,12 @@ the mathematical comparison because several of its numbers are strong.
   genre match. No Matching Categories still has a valid energy target, allowing
   songs such as `After the Rain` and `Backroad Letters` to compete on energy.
 - **Extreme Values vs. Minimal Profile:** The extreme profile favors `Glass
-  Cathedral` because of its classical label. The Minimal Profile favors the two
+Cathedral` because of its classical label. The Minimal Profile favors the two
   pop songs because genre is its only preference.
 - **Extreme Values vs. Contradictory Acoustic:** The extreme profile has
   invalid numerical targets and therefore produces low scores. The acoustic
   profile has valid rock, intense, and high-energy preferences, so `Storm
-  Runner` receives strong points and ranks first.
+Runner` receives strong points and ranks first.
 - **No Matching Categories vs. Minimal Profile:** The no-match profile ranks
   songs near energy `0.5`, regardless of genre. The Minimal Profile ignores
   energy and selects pop songs, so the two profiles produce noticeably
@@ -145,7 +179,22 @@ the mathematical comparison because several of its numbers are strong.
 
 ---
 
-## 8. Future Work
+## 9. Reliability Reflection: What Surprised Me
+
+I was surprised that the hybrid system could remain usable when the LLM was
+unavailable: the fallback parser still produced ranked songs and template
+explanations. At the same time, testing showed that graceful fallback does not
+make the result equally expressive. The fallback recognizes limited terms such
+as `heavy`, `dark`, `energetic`, `calm`, and `chill`, while the LLM can extract
+more of the supported fields. I also found that a valid, grounded explanation
+can still describe a weak recommendation when the scoring weights favor one
+feature too strongly. This is why the project checks both explanation
+grounding and deterministic ranking behavior instead of treating a
+confident-sounding explanation as proof of reliability.
+
+---
+
+## 10. Future Work
 
 I would validate all user values before scoring them. I would group related
 genres and moods. I would add a diversity rule so one artist or style does not
@@ -153,10 +202,14 @@ fill the whole list.
 
 ---
 
-## 9. Personal Reflection
+## 11. Personal Reflection
 
 I learned that small weight changes can change recommendation scores quickly.
 I was surprised that `Gym Hero` appeared for many different profiles. Its high
 energy and danceability made it strong even when its mood did not match. This
 showed me that recommendation results depend heavily on the rules chosen by the
 designer.
+
+## 12. AI Collaboration
+
+One suggestion I accepted was using a fallback parser to ensure the system remains functional even when the LLM is unavailable. I accepted this because it provides a safety net, maintaining usability and reliability of the system under all circumstances. One suggestion I changed was outputing logs to JSONL files and instead chose to log them to the console. I changed this because it simplifies the logging process and I thought logging to JSONL files would add unnecessary complexity.
