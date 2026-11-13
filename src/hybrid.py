@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
-import re
+import uuid
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
-from .recommender import Song, UserProfile, recommend_songs, score_song, song_to_dict
+from .recommender import Song, recommend_songs, song_to_dict
+from .reliability import ReliabilityReport, build_reliability_report
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -55,6 +60,8 @@ class RecommendationResponse:
     recommendations: List[Recommendation]
     used_fallback: bool
     warning: Optional[str] = None
+    request_id: str = ""
+    reliability: Optional[ReliabilityReport] = None
 
 
 class OpenAICompatibleClient:
@@ -241,16 +248,40 @@ def generate_explanations(
 
 
 def hybrid_recommend(text: str, songs: Sequence[Song], k: int = 5, client: Optional[OpenAICompatibleClient] = None) -> RecommendationResponse:
+    request_id = uuid.uuid4().hex[:12]
+    logger.info("recommendation_started", extra={"event": "recommendation_started", "request_id": request_id})
     preferences, extraction_fallback, warning = extract_preferences(text, songs, client)
+    if extraction_fallback:
+        logger.warning("preference_extraction_fallback", extra={"event": "preference_extraction_fallback", "request_id": request_id})
     ranked = recommend_songs(preferences.as_dict(), [song_to_dict(song) for song in songs], k=k)
     recommendations = [Recommendation(song=song, score=score, reasons=reasons) for song, score, reasons in ranked]
     explanations, explanation_fallback, explanation_warning = generate_explanations(preferences, recommendations, client)
     for recommendation, explanation in zip(recommendations, explanations):
         recommendation.explanation = explanation
     warnings = [message for message in (warning, explanation_warning) if message]
+    if explanation_fallback:
+        logger.warning("explanation_fallback", extra={"event": "explanation_fallback", "request_id": request_id})
+    reliability = build_reliability_report(
+        preferences,
+        recommendations,
+        extraction_fallback=extraction_fallback,
+        explanation_fallback=explanation_fallback,
+    )
+    logger.info(
+        "recommendation_completed",
+        extra={
+            "event": "recommendation_completed",
+            "request_id": request_id,
+            "recommendation_count": len(recommendations),
+            "used_fallback": extraction_fallback or explanation_fallback,
+            "confidence": reliability.overall_confidence,
+        },
+    )
     return RecommendationResponse(
         preferences=preferences,
         recommendations=recommendations,
         used_fallback=extraction_fallback or explanation_fallback,
         warning="; ".join(warnings) if warnings else None,
+        request_id=request_id,
+        reliability=reliability,
     )

@@ -74,6 +74,16 @@ with left:
         st.session_state.response = hybrid_recommend(prompt, load_catalog(), k=5)
 
     response = st.session_state.response
+    reliability = response.reliability
+    if reliability:
+        st.subheader("Reliability")
+        confidence_cols = st.columns(3)
+        confidence_cols[0].metric("Overall", f"{reliability.overall_confidence:.0%}")
+        confidence_cols[1].metric("Extraction", f"{reliability.extraction_confidence:.0%}")
+        confidence_cols[2].metric("Grounding", f"{reliability.explanation_confidence:.0%}")
+        st.caption(f"Confidence: {reliability.level}. " + "; ".join(reliability.reasons))
+        if reliability.level == "low" or any(not check.passed for check in reliability.grounding_checks):
+            st.warning("Reliability checks found an issue. Review the explanation details before relying on them.")
     st.subheader("Extracted preferences")
     prefs = response.preferences
     preference_rows = [
@@ -102,3 +112,13 @@ with right:
             f'''<div class="result"><div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start"><div><span class="rank">{index}.</span><span class="song-title">{song["title"]}</span><div class="meta">{song["artist"]} &nbsp;·&nbsp; Genre: {song["genre"]} &nbsp;·&nbsp; Mood: {song["mood"]} &nbsp;·&nbsp; Energy: {float(song["energy"]):.2f} &nbsp;·&nbsp; Acousticness: {float(song["acousticness"]):.2f}</div></div><div class="score">{recommendation.score:.2f}<div class="scorebar"><div style="width:{score * 100:.0f}%"></div></div></div></div><div class="why"><strong>Why it fits:</strong> {recommendation.explanation}</div></div>''',
             unsafe_allow_html=True,
         )
+        feedback_key = f"feedback_{response.request_id}_{song['id']}"
+        if "feedback" not in st.session_state:
+            st.session_state.feedback = {}
+        feedback_cols = st.columns([0.12, 0.12, 0.76])
+        if feedback_cols[0].button("👍", key=f"up_{feedback_key}"):
+            st.session_state.feedback[feedback_key] = "up"
+        if feedback_cols[1].button("👎", key=f"down_{feedback_key}"):
+            st.session_state.feedback[feedback_key] = "down"
+        if feedback_key in st.session_state.feedback:
+            feedback_cols[2].caption(f"Feedback recorded: {st.session_state.feedback[feedback_key]}")

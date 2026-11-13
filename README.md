@@ -213,6 +213,27 @@ the model.
 - **Small catalog trade-off:** The 18-song dataset makes the scoring behavior
   easy to inspect, but it limits variety and can produce repetitive results.
 
+## Reliability and human evaluation
+
+The project measures reliability with several complementary checks:
+
+- Automated tests cover deterministic ranking, fallback extraction, mocked LLM
+  responses, confidence bounds, and explanation grounding.
+- Each run produces evidence-based extraction, explanation, and overall
+  confidence scores. These are based on schema validity, preference completeness,
+  fallback use, response structure, and whether explanations identify the
+  retrieved song. They are reliability indicators, not calibrated probabilities.
+- Runtime events use Python's standard logging system. Logs include a request
+  ID, fallback state, recommendation count, confidence, and error categories,
+  but never API keys or raw user prompts.
+- The Streamlit app provides per-recommendation thumbs-up/thumbs-down controls.
+  Feedback is session-local and is intended for human review of usefulness and
+  explanation quality.
+
+When a reliability check fails, the system degrades safely: deterministic
+rankings remain visible, low confidence is shown to the user, and grounded
+template explanations replace unavailable or invalid LLM explanations.
+
 ## Testing summary
 
 Implemented tests cover:

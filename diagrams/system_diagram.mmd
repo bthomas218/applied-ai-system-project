@@ -25,6 +25,7 @@ flowchart TD
     subgraph validation [Testing and human validation]
         tests[pytest tests/test_recommender.py]
         mocks[Mocked LLM responses]
+        reliability[Confidence and grounding checks<br/>src/reliability.py]
         smoke[Manual smoke test]
         review([Human reviews relevance<br/>and explanation grounding])
     end
@@ -32,6 +33,8 @@ flowchart TD
     tests --> scorer
     tests --> fallback
     mocks --> explainer
+    output --> reliability
+    reliability --> ui
     smoke --> ui
     output --> review
     review -. feedback .-> ui

@@ -1,10 +1,10 @@
 from src.recommender import Song, UserProfile, Recommender, score_song
 from src.hybrid import (
-    ExtractedPreferences,
     OpenAICompatibleClient,
     fallback_preferences,
     hybrid_recommend,
 )
+from src.reliability import build_reliability_report, check_grounding
 
 def make_small_recommender() -> Recommender:
     songs = [
@@ -108,10 +108,31 @@ def test_hybrid_recommend_uses_mocked_llm_for_extraction_and_explanation():
             self.calls += 1
             if self.calls == 1:
                 return {"genre": "pop", "mood": "happy", "energy": 0.8, "acousticness": 0.2}
-            return {"explanations": ["Grounded explanation"]}
+            return {"explanations": ["Test Pop Track by Test Artist is a grounded explanation."]}
 
     client = MockClient()
     response = hybrid_recommend("pop and happy", songs, k=1, client=client)
     assert response.used_fallback is False
     assert response.preferences.genre == "pop"
-    assert response.recommendations[0].explanation == "Grounded explanation"
+    assert response.recommendations[0].explanation.startswith("Test Pop Track")
+    assert response.reliability.level == "high"
+
+
+def test_grounding_check_rejects_wrong_song():
+    song = {"title": "Test Pop Track", "artist": "Test Artist"}
+    check = check_grounding("This is a great match for another song.", song)
+    assert check.passed is False
+
+
+def test_reliability_report_marks_fallback_and_grounding():
+    songs = make_small_recommender().songs
+    response = hybrid_recommend("Something energetic", songs, k=1, client=OpenAICompatibleClient(api_key=""))
+    report = build_reliability_report(
+        response.preferences,
+        response.recommendations,
+        extraction_fallback=True,
+        explanation_fallback=True,
+    )
+    assert 0 <= report.overall_confidence <= 1
+    assert report.grounding_checks[0].passed is True
+    assert "template explanations were used" in report.reasons
