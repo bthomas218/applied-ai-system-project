@@ -113,6 +113,103 @@ uv run python src/main.py
 uv run pytest
 ```
 
+## Reproducible execution evidence
+
+The following commands were run from the repository root with the existing
+Python 3.13 virtual environment. The examples use the local catalog and do not
+require an API key.
+
+### Sample command execution and output
+
+Command:
+
+```bash
+.venv/bin/python src/main.py
+```
+
+Example input and output:
+
+```text
+Input profile: High-Energy Pop
+Preferences: genre=pop, mood=happy, energy=0.8, valence=0.9,
+tempo_bpm=120, danceability=0.8, likes_acoustic=False
+
+Loaded songs: 18
+Top recommendation: Sunrise City - Score: 104.64
+Because: genre match (+12.5); mood match (+30.0); energy similarity (+39.2);
+valence similarity (+9.4); tempo similarity (+4.8);
+danceability similarity (+3.0); acousticness preference (+5.7)
+```
+
+The command also evaluates the adversarial profiles `Conflicting High-Energy
+Sad`, `Extreme Values`, `No Matching Categories`, `Minimal Profile`, and
+`Contradictory Acoustic`.
+
+### Reliability and guardrail execution
+
+Command:
+
+```bash
+.venv/bin/pytest -q
+```
+
+Output:
+
+```text
+.........                                                                [100%]
+9 passed in 0.04s
+```
+
+The tests cover deterministic ranking, fallback preference extraction, mocked
+LLM extraction and explanations, confidence bounds, and explanation grounding.
+
+Command:
+
+```bash
+.venv/bin/python - <<'PY'
+import csv
+from src.hybrid import OpenAICompatibleClient, hybrid_recommend
+from src.recommender import Song
+
+with open("data/songs.csv", newline="", encoding="utf-8") as handle:
+    songs = [Song(**{
+        key: int(value) if key == "id" else float(value) if key in {
+            "energy", "tempo_bpm", "valence", "danceability", "acousticness"
+        } else value
+        for key, value in row.items()
+    }) for row in csv.DictReader(handle)]
+
+response = hybrid_recommend(
+    "Something heavy, dark, and energetic",
+    songs,
+    k=1,
+    client=OpenAICompatibleClient(api_key=""),
+)
+recommendation = response.recommendations[0]
+print("used_fallback:", response.used_fallback)
+print("genre:", response.preferences.genre)
+print("mood:", response.preferences.mood)
+print("top_song:", recommendation.song["title"])
+print("confidence_level:", response.reliability.level)
+print("grounding_passed:", response.reliability.grounding_checks[0].passed)
+PY
+```
+
+Output:
+
+```text
+used_fallback: True
+genre: metal
+mood: aggressive
+top_song: Iron Horizon
+confidence_level: high
+grounding_passed: True
+```
+
+This demonstrates the guardrails in offline mode: the request is mapped to
+catalog labels, the ranking remains deterministic, the explanation identifies
+the retrieved song, and the system reports that fallback behavior was used.
+
 ## Sample interactions
 
 The examples below show the deterministic fallback mode, which works without
@@ -246,11 +343,9 @@ Implemented tests cover:
 - hybrid recommendations without an API key
 - mocked LLM extraction and explanation responses
 
-The direct smoke test and Python compilation checks pass. The full pytest suite
-could not be executed in the development environment because pytest and the
-project dependencies were not installed, and network access prevented `uv`
-from downloading the locked packages. This also prevented browser-level
-Streamlit verification in that environment.
+The direct smoke test, Python compilation checks, and full pytest suite pass in
+the project virtual environment. Browser-level Streamlit verification is not
+included in the automated test suite.
 
 The main lesson was that the LLM should improve the interface and explanation
 quality without becoming the source of truth for ranking. Keeping the scorer
